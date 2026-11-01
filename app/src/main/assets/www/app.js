@@ -82,7 +82,7 @@ async function loadFaceApi() {
       await faceapi.tf.ready();
     }
   } catch (e) { /* يستخدم الافتراضي */ }
-  const base = (await exists('models/face_recognition_model.json')) ? 'models' : CDN_MODELS;
+  const base = (await exists('models/face_recognition_model-weights_manifest.json')) ? 'models' : CDN_MODELS;
   msg.textContent = 'جاري تجهيز نماذج التعرف…';
   await faceapi.nets.tinyFaceDetector.loadFromUri(base);
   await faceapi.nets.faceLandmark68Net.loadFromUri(base);

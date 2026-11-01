@@ -12,7 +12,7 @@ mkdir -p "$WWW/lib" "$WWW/models"
 cp "$PKG/dist/face-api.js" "$WWW/lib/face-api.js"
 cp "$TMP/node_modules/jsqr/dist/jsQR.js" "$WWW/lib/jsQR.js"
 for m in tiny_face_detector_model face_landmark_68_model face_recognition_model; do
-  cp "$PKG/model/$m".* "$WWW/models/"
+  cp "$PKG/model/$m"* "$WWW/models/"
 done
 ls -la "$WWW/lib" "$WWW/models"
 rm -rf "$TMP"
