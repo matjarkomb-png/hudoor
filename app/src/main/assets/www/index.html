@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<title>حضور</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- شاشة التحميل -->
+<section id="screen-loading" class="screen active">
+  <div class="center-box">
+    <div class="logo">حضور</div>
+    <div class="spinner"></div>
+    <p id="loading-text">جاري تحميل نظام التعرف على الوجه…</p>
+  </div>
+</section>
+
+<!-- الإعداد لأول مرة -->
+<section id="screen-setup" class="screen">
+  <div class="center-box card narrow">
+    <div class="logo">حضور</div>
+    <h2>مرحباً بك</h2>
+    <p class="muted">اختر رمز دخول للمدير (٤ أرقام على الأقل). ستحتاجه لإضافة الموظفين وعرض السجلات.</p>
+    <label>اسم الشركة / المكتب
+      <input id="setup-company" type="text" placeholder="مثال: شركة النور">
+    </label>
+    <label>رمز المدير
+      <input id="setup-pin" type="password" inputmode="numeric" placeholder="••••">
+    </label>
+    <label>تأكيد الرمز
+      <input id="setup-pin2" type="password" inputmode="numeric" placeholder="••••">
+    </label>
+    <button id="setup-save" class="btn primary block">ابدأ</button>
+    <p id="setup-error" class="error"></p>
+  </div>
+</section>
+
+<!-- شاشة الحضور (الكشك) -->
+<section id="screen-kiosk" class="screen">
+  <header class="kiosk-head">
+    <div>
+      <div id="kiosk-company" class="company"></div>
+      <div id="kiosk-date" class="muted small"></div>
+    </div>
+    <div id="kiosk-clock" class="clock">--:--</div>
+    <button id="btn-admin" class="icon-btn" aria-label="الإدارة">⚙</button>
+  </header>
+
+  <div class="camera-wrap">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div class="face-guide"></div>
+    <div id="kiosk-status" class="status-pill">انظر إلى الكاميرا</div>
+  </div>
+
+  <div id="match-card" class="match-card hidden">
+    <img id="match-photo" alt="">
+    <div class="match-info">
+      <div id="match-name" class="match-name"></div>
+      <div id="match-last" class="muted small"></div>
+    </div>
+    <div class="match-actions">
+      <button id="btn-in" class="btn in">تسجيل دخول</button>
+      <button id="btn-out" class="btn out">تسجيل خروج</button>
+    </div>
+    <button id="btn-not-me" class="link-btn">لست أنا</button>
+    <div class="countdown"><div id="countdown-bar"></div></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</section>
+
+<!-- رمز المدير -->
+<div id="pin-modal" class="modal hidden">
+  <div class="card narrow">
+    <h3>دخول المدير</h3>
+    <input id="pin-input" type="password" inputmode="numeric" placeholder="أدخل الرمز">
+    <p id="pin-error" class="error"></p>
+    <div class="row">
+      <button id="pin-ok" class="btn primary">دخول</button>
+      <button id="pin-cancel" class="btn ghost">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- لوحة الإدارة -->
+<section id="screen-admin" class="screen">
+  <header class="admin-head">
+    <button id="btn-back-kiosk" class="btn ghost small-btn">→ رجوع للحضور</button>
+    <h2>الإدارة</h2>
+  </header>
+  <nav class="tabs">
+    <button class="tab active" data-tab="employees">الموظفون</button>
+    <button class="tab" data-tab="records">السجلات</button>
+    <button class="tab" data-tab="settings">الإعدادات</button>
+  </nav>
+
+  <!-- الموظفون -->
+  <div id="tab-employees" class="tab-panel active">
+    <div class="row space">
+      <span id="emp-count" class="muted"></span>
+      <button id="btn-add-emp" class="btn primary">+ إضافة موظف</button>
+    </div>
+    <div id="emp-list" class="emp-list"></div>
+  </div>
+
+  <!-- السجلات -->
+  <div id="tab-records" class="tab-panel">
+    <div class="filters card">
+      <label>من <input id="f-from" type="date"></label>
+      <label>إلى <input id="f-to" type="date"></label>
+      <label>الموظف
+        <select id="f-emp"><option value="">الكل</option></select>
+      </label>
+      <div class="row">
+        <button id="f-today" class="btn ghost small-btn">اليوم</button>
+        <button id="f-month" class="btn ghost small-btn">هذا الشهر</button>
+      </div>
+    </div>
+    <div class="row space">
+      <div class="seg">
+        <button class="seg-btn active" data-view="summary">ملخص يومي</button>
+        <button class="seg-btn" data-view="log">كل الحركات</button>
+      </div>
+      <button id="btn-export" class="btn primary">تصدير Excel</button>
+    </div>
+    <div id="records-table" class="table-wrap"></div>
+  </div>
+
+  <!-- الإعدادات -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="card">
+      <h3>عام</h3>
+      <label>اسم الشركة / المكتب <input id="s-company" type="text"></label>
+      <label>دقة التعرف
+        <select id="s-threshold">
+          <option value="0.42">عالية جداً (أقل أخطاء، قد يحتاج محاولات)</option>
+          <option value="0.48">عالية (موصى به)</option>
+          <option value="0.55">متوسطة (أسرع، أخطاء أكثر)</option>
+        </select>
+      </label>
+      <label>منع التكرار: تجاهل نفس الحركة خلال (دقائق)
+        <input id="s-dup" type="number" min="0" max="120">
+      </label>
+      <button id="s-save" class="btn primary">حفظ</button>
+    </div>
+    <div class="card">
+      <h3>تغيير رمز المدير</h3>
+      <label>الرمز الجديد <input id="s-pin" type="password" inputmode="numeric"></label>
+      <label>تأكيد <input id="s-pin2" type="password" inputmode="numeric"></label>
+      <button id="s-pin-save" class="btn primary">تغيير الرمز</button>
+    </div>
+    <div class="card">
+      <h3>النسخ الاحتياطي</h3>
+      <p class="muted small">البيانات محفوظة على هذا الجهاز فقط. إذا حذفت التطبيق تُحذف معه، لذلك احفظ نسخة احتياطية بشكل دوري.</p>
+      <div class="row wrap">
+        <button id="b-export" class="btn ghost">حفظ نسخة احتياطية</button>
+        <button id="b-import" class="btn ghost">استعادة نسخة</button>
+        <input id="b-file" type="file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="card danger-zone">
+      <h3>حذف السجلات</h3>
+      <p class="muted small">يحذف كل حركات الدخول والخروج ويُبقي الموظفين.</p>
+      <button id="b-clear" class="btn danger">حذف كل السجلات</button>
+    </div>
+  </div>
+</section>
+
+<!-- إضافة / تعديل موظف -->
+<section id="screen-enroll" class="screen">
+  <header class="admin-head">
+    <button id="enroll-cancel" class="btn ghost small-btn">→ رجوع</button>
+    <h2 id="enroll-title">إضافة موظف</h2>
+  </header>
+  <div class="enroll-body">
+    <div class="card">
+      <label>اسم الموظف <input id="e-name" type="text" placeholder="الاسم الكامل"></label>
+      <label>الرقم الوظيفي (اختياري) <input id="e-code" type="text"></label>
+    </div>
+    <div class="camera-wrap small-cam">
+      <video id="enroll-video" autoplay muted playsinline></video>
+      <div class="face-guide"></div>
+      <div id="enroll-status" class="status-pill">اضغط "بدء التقاط الوجه"</div>
+    </div>
+    <div class="progress"><div id="enroll-progress"></div></div>
+    <div id="enroll-thumbs" class="thumbs"></div>
+    <div class="row wrap">
+      <button id="enroll-start" class="btn primary">بدء التقاط الوجه</button>
+      <button id="enroll-save" class="btn in" disabled>حفظ الموظف</button>
+    </div>
+    <p id="enroll-error" class="error"></p>
+  </div>
+</section>
+
+<!-- نافذة تأكيد عامة -->
+<div id="confirm-modal" class="modal hidden">
+  <div class="card narrow">
+    <p id="confirm-text"></p>
+    <div class="row">
+      <button id="confirm-yes" class="btn danger">نعم</button>
+      <button id="confirm-no" class="btn ghost">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<script src="db.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
