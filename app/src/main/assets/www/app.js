@@ -19,7 +19,9 @@ const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي�
 // ===== الحالة =====
 const S = {
   employees: [],
-  settings: { company: '', threshold: 0.48, dup: 5, pinHash: null },
+  settings: { company: '', threshold: 0.48, dup: 5, pinHash: null, syncUrl: '', syncKey: '', device: '', lastSync: 0 },
+  sync: { busy: false, error: '', dirty: false, pending: 0 },
+  scan: null,
   stream: null,
   kioskTimer: null,
   detecting: false,
@@ -218,8 +220,9 @@ async function punch(type) {
     toast('warn', 'مسجّل مسبقاً', `${emp.name}<br>سبق تسجيل ${type === 'in' ? 'دخولك' : 'خروجك'} الساعة ${time12(last.ts)}`);
     return;
   }
-  await DB.put('records', { id: uid(), empId: emp.id, empName: emp.name, empCode: emp.code || '', type, ts: now });
+  await DB.put('records', { id: uid(), empId: emp.id, empName: emp.name, empCode: emp.code || '', type, ts: now, synced: false });
   toast(type, type === 'in' ? 'تم تسجيل الدخول ✓' : 'تم تسجيل الخروج ✓', `${esc(emp.name)}<br>${time12(now)}`);
+  syncNow();
 }
 
 let toastTimer = null;
@@ -310,6 +313,7 @@ $('emp-list').addEventListener('click', async ev => {
     const emp = S.employees.find(e => e.id === delId);
     if (await confirmBox(`حذف الموظف "${emp.name}"؟ ستبقى سجلاته السابقة محفوظة.`)) {
       await DB.del('employees', delId); await reloadEmployees(); renderEmployees();
+      S.sync.dirty = true; syncNow();
     }
   }
 });
@@ -417,6 +421,7 @@ async function saveEnroll() {
   await DB.put('employees', emp);
   await reloadEmployees();
   S.enroll = null;
+  S.sync.dirty = true; syncNow();
   openAdmin('employees');
 }
 
@@ -561,6 +566,8 @@ function fillSettings() {
   if (!$('s-threshold').value) $('s-threshold').value = '0.48';
   $('s-dup').value = S.settings.dup;
   $('s-pin').value = ''; $('s-pin2').value = '';
+  fillSyncFields();
+  updateSyncUI();
 }
 async function saveSettings() {
   S.settings.company = $('s-company').value.trim();
@@ -604,6 +611,210 @@ async function importBackup(file) {
   openAdmin('employees');
 }
 
+// ===== الربط مع موقع OpenCart =====
+const DEFAULT_SITE = 'https://www.matjarkom.com/';
+const SYNC_BATCH = 200;
+const SYNC_EVERY_MS = 60 * 1000;
+
+function syncConfigured() { return !!(S.settings.syncUrl && S.settings.syncKey); }
+function normalizeUrl(u) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  u = u.replace(/index\.php.*$/i, '');
+  return u.replace(/\/+$/, '') + '/';
+}
+function localStamp(ts) {
+  const d = new Date(ts);
+  return `${dayKey(ts)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function siteHost(u) { try { return new URL(u).host.replace(/^www\./, ''); } catch (e) { return u; } }
+
+async function apiCall(base, key, route, extra) {
+  const url = base + 'index.php?route=extension/hudoor/api/' + route;
+  const body = Object.assign({ key }, extra || {});
+  let res, text;
+  const ctrl = ('AbortController' in window) ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), 30000) : null;
+  try {
+    // text/plain يجعل الطلب "بسيطاً" فلا يحتاج الموقع إعدادات CORS إضافية
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body), cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+    text = await res.text();
+  } catch (e) {
+    throw new Error(navigator.onLine === false ? 'لا يوجد اتصال بالإنترنت' : 'تعذّر الوصول إلى الموقع. تحقق من الرابط والإنترنت');
+  } finally { if (timer) clearTimeout(timer); }
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) {}
+  if (!json) {
+    if (res.status === 404 || /<html/i.test(text)) throw new Error('الإضافة غير مثبتة على الموقع، أو الموقع يحجب الطلب');
+    throw new Error('رد غير متوقع من الموقع (' + res.status + ')');
+  }
+  if (!json.ok) throw new Error(json.message || json.error || ('خطأ ' + res.status));
+  return json;
+}
+
+async function countPending() {
+  const all = await DB.all('records');
+  return all.filter(r => r.synced !== true).length;
+}
+
+let syncPromise = null;
+function syncNow(manual) {
+  if (!syncConfigured()) { updateSyncUI(); return Promise.resolve(false); }
+  if (syncPromise) return syncPromise;
+  syncPromise = (async () => {
+    S.sync.busy = true; updateSyncUI();
+    let contacted = false;
+    try {
+      for (let round = 0; round < 50; round++) {
+        const pending = (await DB.all('records')).filter(r => r.synced !== true).sort((a, b) => a.ts - b.ts);
+        if (!pending.length && !S.sync.dirty && !manual) break;
+        contacted = true;
+        const batch = pending.slice(0, SYNC_BATCH);
+        const res = await apiCall(S.settings.syncUrl, S.settings.syncKey, 'push', {
+          device: S.settings.device || 'جهاز المكتب',
+          employees: S.employees.map(e => ({ id: e.id, name: e.name, code: e.code || '' })),
+          employees_full: true,
+          records: batch.map(r => ({ id: r.id, empId: r.empId, empName: r.empName, empCode: r.empCode || '', type: r.type, ts: r.ts, local: localStamp(r.ts) }))
+        });
+        S.sync.dirty = false; manual = false;
+        const saved = new Set(res.saved || []);
+        const done = batch.filter(r => saved.has(r.id)).map(r => Object.assign({}, r, { synced: true }));
+        if (done.length) await DB.putMany('records', done);
+        if (done.length < batch.length) throw new Error('رفض الموقع بعض الحركات');
+        if (pending.length <= SYNC_BATCH) break;
+      }
+      if (contacted) {
+        S.settings.lastSync = Date.now();
+        await DB.setSetting('lastSync', S.settings.lastSync);
+        S.sync.error = '';
+      }
+      return true;
+    } catch (e) {
+      S.sync.error = e.message || String(e);
+      return false;
+    } finally {
+      S.sync.busy = false; syncPromise = null;
+      updateSyncUI();
+    }
+  })();
+  return syncPromise;
+}
+
+async function updateSyncUI() {
+  S.sync.pending = await countPending();
+  const ks = $('kiosk-sync'), st = $('sync-status');
+  if (!syncConfigured()) {
+    ks.classList.add('hidden');
+    st.className = 'sync-status'; st.textContent = 'غير مربوط بموقع. السجلات محفوظة على هذا الجهاز فقط.';
+    return;
+  }
+  const host = siteHost(S.settings.syncUrl);
+  const last = S.settings.lastSync ? `${dayKey(S.settings.lastSync) === dayKey(Date.now()) ? 'اليوم' : dayKey(S.settings.lastSync)} ${time12(S.settings.lastSync)}` : '—';
+  let cls = 'ok', line;
+  if (S.sync.busy) { line = 'جاري الإرسال…'; cls = 'warn'; }
+  else if (S.sync.error) { line = 'خطأ: ' + S.sync.error; cls = 'err'; }
+  else if (S.sync.pending) { line = `${S.sync.pending} حركة بانتظار الإرسال`; cls = 'warn'; }
+  else line = 'كل الحركات وصلت ✓';
+  st.className = 'sync-status ' + cls;
+  st.innerHTML = `مربوط بـ <b dir="ltr">${esc(host)}</b><br>${esc(line)}<br><span class="small">آخر إرسال ناجح: ${esc(last)}</span>`;
+  ks.classList.remove('hidden', 'pending', 'error');
+  if (S.sync.error) { ks.classList.add('error'); ks.textContent = 'تعذّر الإرسال للموقع' + (S.sync.pending ? ` (${S.sync.pending} بالانتظار)` : ''); }
+  else if (S.sync.pending) { ks.classList.add('pending'); ks.textContent = `${S.sync.pending} حركة بانتظار الإرسال`; }
+  else ks.textContent = 'متصل بالموقع';
+}
+
+async function connectSite(url, key, device) {
+  url = normalizeUrl(url); key = String(key || '').trim().toUpperCase();
+  if (!url || !key) { alert('أدخل رابط الموقع ومفتاح الربط'); return false; }
+  const st = $('sync-status'); st.className = 'sync-status warn'; st.textContent = 'جاري الاتصال بالموقع…';
+  try {
+    const res = await apiCall(url, key, 'ping');
+    S.settings.syncUrl = url; S.settings.syncKey = key;
+    S.settings.device = (device || '').trim() || S.settings.device || 'جهاز المكتب';
+    await DB.setSetting('syncUrl', url); await DB.setSetting('syncKey', key); await DB.setSetting('device', S.settings.device);
+    S.sync.error = ''; S.sync.dirty = true;
+    fillSyncFields();
+    const pending = await countPending();
+    await syncNow(true);
+    alert(`تم الربط بنجاح مع ${res.store || siteHost(url)} ✓` + (pending ? `\nتم إرسال ${pending} حركة سابقة إلى الموقع.` : ''));
+    return true;
+  } catch (e) {
+    st.className = 'sync-status err'; st.textContent = 'فشل الربط: ' + e.message;
+    return false;
+  }
+}
+
+async function disconnectSite() {
+  if (!await confirmBox('إلغاء الربط مع الموقع؟ ستبقى السجلات على هذا الجهاز ولن تُرسل حركات جديدة.')) return;
+  S.settings.syncUrl = ''; S.settings.syncKey = ''; S.sync.error = '';
+  await DB.setSetting('syncUrl', ''); await DB.setSetting('syncKey', '');
+  fillSyncFields(); updateSyncUI();
+}
+
+function fillSyncFields() {
+  $('sync-url').value = S.settings.syncUrl || DEFAULT_SITE;
+  $('sync-key').value = S.settings.syncKey || '';
+  $('sync-device').value = S.settings.device || '';
+  $('sync-now').disabled = !syncConfigured();
+  $('sync-off').disabled = !syncConfigured();
+}
+
+// ===== مسح رمز الربط (QR) =====
+async function loadJsQR() {
+  if (window.jsQR) return;
+  try { await loadScript('lib/jsQR.js'); }
+  catch (e) { await loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'); }
+}
+
+async function openScanner() {
+  $('scan-modal').classList.remove('hidden');
+  $('scan-status').textContent = 'جاري تشغيل الكاميرا…';
+  // أوقف كاميرا الحضور مؤقتاً وشغّل الكاميرا الخلفية إن وجدت
+  if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+  try {
+    await loadJsQR();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const video = $('scan-video');
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) {}
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    S.scan = { stream, timer: null };
+    $('scan-status').textContent = 'وجّه الكاميرا إلى الرمز في لوحة تحكم الموقع';
+    const tick = () => {
+      if (!S.scan) return;
+      if (video.readyState >= 2 && video.videoWidth) {
+        const scale = Math.min(1, 640 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+        if (code && code.data) {
+          const parts = code.data.split('|');
+          if (parts[0] === 'HUDOOR' && parts.length >= 3) {
+            closeScanner();
+            connectSite(parts[1], parts[2], $('sync-device').value);
+            return;
+          }
+          $('scan-status').textContent = 'هذا ليس رمز ربط تطبيق حضور';
+        }
+      }
+      S.scan.timer = setTimeout(tick, 200);
+    };
+    tick();
+  } catch (e) {
+    console.error(e);
+    $('scan-status').textContent = 'تعذّر تشغيل الماسح. استخدم الإدخال اليدوي.';
+  }
+}
+
+function closeScanner() {
+  if (S.scan) { clearTimeout(S.scan.timer); S.scan.stream.getTracks().forEach(t => t.stop()); S.scan = null; }
+  $('scan-video').srcObject = null;
+  $('scan-modal').classList.add('hidden');
+}
+
 // ===== نافذة التأكيد =====
 function confirmBox(text) {
   return new Promise(resolve => {
@@ -617,6 +828,7 @@ function confirmBox(text) {
 
 // ===== زر الرجوع في أندرويد =====
 window.onAndroidBack = function () {
+  if (!$('scan-modal').classList.contains('hidden')) { closeScanner(); return true; }
   if (!$('confirm-modal').classList.contains('hidden')) { $('confirm-no').click(); return true; }
   if (!$('pin-modal').classList.contains('hidden')) { $('pin-modal').classList.add('hidden'); return true; }
   const c = current();
@@ -673,6 +885,16 @@ function bind() {
   $('b-clear').onclick = async () => {
     if (await confirmBox('حذف كل سجلات الدخول والخروج نهائياً؟ لا يمكن التراجع.')) { await DB.clear('records'); renderRecords(); alert('تم الحذف'); }
   };
+  $('sync-scan').onclick = openScanner;
+  $('scan-cancel').onclick = closeScanner;
+  $('sync-test').onclick = () => connectSite($('sync-url').value, $('sync-key').value, $('sync-device').value);
+  $('sync-now').onclick = async () => {
+    const ok = await syncNow(true);
+    alert(ok ? 'تم الإرسال إلى الموقع ✓' : 'تعذّر الإرسال: ' + S.sync.error);
+  };
+  $('sync-off').onclick = disconnectSite;
+  setInterval(() => syncNow(), SYNC_EVERY_MS);
+  window.addEventListener('online', () => syncNow());
   setInterval(() => { if (current() === 'screen-kiosk') tickClock(); }, 1000);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; } }
@@ -687,6 +909,10 @@ async function loadAll() {
   S.settings.threshold = await DB.getSetting('threshold', 0.48);
   S.settings.dup = await DB.getSetting('dup', 5);
   S.settings.pinHash = await DB.getSetting('pinHash', null);
+  S.settings.syncUrl = await DB.getSetting('syncUrl', '');
+  S.settings.syncKey = await DB.getSetting('syncKey', '');
+  S.settings.device = await DB.getSetting('device', '');
+  S.settings.lastSync = await DB.getSetting('lastSync', 0);
 }
 
 async function init() {
@@ -705,6 +931,8 @@ async function init() {
   }
   if (!S.settings.pinHash) show('screen-setup');
   else show('screen-kiosk');
+  updateSyncUI();
+  setTimeout(() => syncNow(), 3000);
 }
 
 window.__hudoor = { S, DB, buildSummary }; // للاختبار

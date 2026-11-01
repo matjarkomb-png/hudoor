@@ -1,0 +1,117 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <a href="{{ export_url }}" class="btn btn-success"><i class="fa fa-file-excel-o"></i> تصدير Excel</a>
+        <a href="{{ settings_url }}" class="btn btn-default"><i class="fa fa-link"></i> ربط التطبيق</a>
+      </div>
+      <h1>سجل الحضور والانصراف</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}
+        <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="container-fluid" dir="rtl" style="text-align:right">
+    <div class="panel panel-default">
+      <div class="panel-body">
+        <div class="row">
+          <div class="col-sm-3"><div class="form-group"><label>من تاريخ</label><input type="date" id="f-from" class="form-control" value="{{ filter_date_from }}"></div></div>
+          <div class="col-sm-3"><div class="form-group"><label>إلى تاريخ</label><input type="date" id="f-to" class="form-control" value="{{ filter_date_to }}"></div></div>
+          <div class="col-sm-3"><div class="form-group"><label>الموظف</label>
+            <select id="f-emp" class="form-control">
+              <option value="">الكل</option>
+              {% for e in employees %}
+              <option value="{{ e.employee_id }}"{% if e.employee_id == filter_employee_id %} selected{% endif %}>{{ e.name }}</option>
+              {% endfor %}
+            </select></div></div>
+          <div class="col-sm-3"><label>&nbsp;</label><div>
+            <button id="f-go" class="btn btn-primary"><i class="fa fa-filter"></i> عرض</button>
+            <button id="f-today" class="btn btn-default">اليوم</button>
+            <button id="f-month" class="btn btn-default">هذا الشهر</button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <ul class="nav nav-tabs">
+      <li{% if view == 'summary' %} class="active"{% endif %}><a href="{{ summary_url }}">ملخص يومي</a></li>
+      <li{% if view == 'log' %} class="active"{% endif %}><a href="{{ log_url }}">كل الحركات</a></li>
+    </ul>
+
+    <div class="panel panel-default" style="border-top:0">
+      <div class="table-responsive">
+      {% if view == 'summary' %}
+        {% if rows %}
+        <table class="table table-bordered table-hover" style="margin:0">
+          <thead><tr><th>الموظف</th><th>اليوم</th><th>التاريخ</th><th>أول دخول</th><th>آخر خروج</th><th>ساعات العمل</th><th></th></tr></thead>
+          <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>{{ r.name }}</td><td>{{ r.day_name }}</td><td dir="ltr" style="text-align:right">{{ r.day }}</td>
+              <td>{{ r.first_in }}</td><td>{{ r.last_out }}</td><td dir="ltr" style="text-align:right"><b>{{ r.worked }}</b></td>
+              <td>{% if r.missing %}<span class="label label-danger">حركة ناقصة</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <h4 style="padding:15px 15px 0">الإجمالي للفترة</h4>
+        <table class="table table-bordered" style="margin:0">
+          <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>أيام الحضور</th><th>مجموع الساعات</th></tr></thead>
+          <tbody>
+          {% for t in totals %}
+            <tr><td>{{ t.name }}</td><td>{{ t.code }}</td><td>{{ t.days }}</td><td dir="ltr" style="text-align:right"><b>{{ t.worked }}</b></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-center text-muted" style="padding:40px">لا توجد سجلات في هذه الفترة</p>
+        {% endif %}
+      {% else %}
+        {% if log %}
+        <table class="table table-bordered table-hover" style="margin:0">
+          <thead><tr><th>الموظف</th><th>اليوم</th><th>التاريخ</th><th>الوقت</th><th>الحركة</th><th></th></tr></thead>
+          <tbody>
+          {% for r in log %}
+            <tr id="rec-{{ r.record_id }}">
+              <td>{{ r.name }}</td><td>{{ r.day_name }}</td><td dir="ltr" style="text-align:right">{{ r.day }}</td><td>{{ r.time }}</td>
+              <td>{% if r.type == 'in' %}<span class="label label-success">دخول</span>{% else %}<span class="label label-warning">خروج</span>{% endif %}</td>
+              <td><button type="button" class="btn btn-xs btn-danger hudoor-del" data-id="{{ r.record_id }}" title="حذف"><i class="fa fa-trash"></i></button></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-center text-muted" style="padding:40px">لا توجد سجلات في هذه الفترة</p>
+        {% endif %}
+      {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var base = {{ report_base|json_encode }};
+  var view = {{ view|json_encode }};
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function go(from, to) {
+    location = base + '&filter_date_from=' + encodeURIComponent(from) + '&filter_date_to=' + encodeURIComponent(to)
+      + '&filter_employee_id=' + encodeURIComponent($('#f-emp').val()) + '&view=' + view;
+  }
+  $('#f-go').on('click', function () { go($('#f-from').val(), $('#f-to').val()); });
+  $('#f-emp').on('change', function () { go($('#f-from').val(), $('#f-to').val()); });
+  $('#f-today').on('click', function () { var t = fmt(new Date()); go(t, t); });
+  $('#f-month').on('click', function () { var d = new Date(); go(fmt(new Date(d.getFullYear(), d.getMonth(), 1)), fmt(d)); });
+  $('.hudoor-del').on('click', function () {
+    var id = $(this).data('id');
+    if (!confirm('حذف هذه الحركة نهائياً؟')) return;
+    $.post({{ delete_url|json_encode }}, { record_id: id }, function (json) {
+      if (json && json.success) { $('#rec-' + id).remove(); } else { alert((json && json.error) || 'خطأ'); }
+    }, 'json');
+  });
+})();
+</script>
+{{ footer }}

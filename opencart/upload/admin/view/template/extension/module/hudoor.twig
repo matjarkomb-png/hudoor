@@ -1,0 +1,103 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <a href="{{ report }}" class="btn btn-success"><i class="fa fa-list"></i> سجل الحضور</a>
+        <a href="{{ cancel }}" class="btn btn-default"><i class="fa fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}
+        <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="container-fluid" dir="rtl" style="text-align:right">
+    {% if error_warning %}
+    <div class="alert alert-danger"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="alert alert-success"><i class="fa fa-check-circle"></i> {{ success }}</div>
+    {% endif %}
+
+    <div class="row">
+      <div class="col-md-7">
+        <div class="panel panel-default">
+          <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-link"></i> ربط تطبيق الحضور</h3></div>
+          <div class="panel-body">
+            <p>في التطبيق على جهاز المكتب: ⚙ ← الإعدادات ← <b>ربط الموقع</b> ← <b>مسح رمز الربط</b>، ثم وجّه الكاميرا إلى هذا الرمز.</p>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin:16px 0">
+              <div id="hudoor-qr" style="background:#fff;padding:12px;border:1px solid #ddd;border-radius:8px;width:244px;height:244px"></div>
+              <div style="flex:1;min-width:220px">
+                <p style="margin-bottom:4px">أو أدخل البيانات يدوياً في التطبيق:</p>
+                <div class="form-group">
+                  <label>رابط الموقع</label>
+                  <input type="text" class="form-control" value="{{ site_url }}" readonly dir="ltr" onclick="this.select()">
+                </div>
+                <div class="form-group">
+                  <label>مفتاح الربط</label>
+                  <div class="input-group">
+                    <input id="hudoor-key" type="text" class="form-control" value="{{ api_key }}" readonly dir="ltr" style="font-family:monospace;font-size:16px;letter-spacing:1px" onclick="this.select()">
+                    <span class="input-group-btn"><button class="btn btn-default" type="button" onclick="var i=document.getElementById('hudoor-key');i.select();document.execCommand('copy');this.innerHTML='تم النسخ ✓'">نسخ</button></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="text-muted"><i class="fa fa-lock"></i> هذا المفتاح يسمح فقط بإضافة حركات الحضور. لا تشاركه مع أحد. إذا تسرّب، أنشئ مفتاحاً جديداً واربط التطبيق مرة أخرى.</p>
+          </div>
+        </div>
+
+        <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-module" class="panel panel-default">
+          <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-cog"></i> الإعدادات</h3></div>
+          <div class="panel-body">
+            <div class="checkbox">
+              <label><input type="checkbox" name="module_hudoor_status" value="1" {% if module_hudoor_status %}checked{% endif %}> تفعيل استقبال الحركات من التطبيق</label>
+            </div>
+            <div class="checkbox">
+              <label><input type="checkbox" name="regenerate" value="1"> إنشاء مفتاح ربط جديد (يجب إعادة ربط التطبيق بعده)</label>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> حفظ</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="col-md-5">
+        <div class="panel panel-default">
+          <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-bar-chart"></i> الحالة</h3></div>
+          <div class="panel-body">
+            <p>عدد الحركات المستلمة: <b>{{ total_records }}</b></p>
+            <p>آخر استلام: <b dir="ltr">{{ last_sync ? last_sync : '—' }}</b></p>
+          </div>
+        </div>
+        <div class="panel panel-default">
+          <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-users"></i> الموظفون المسجلون في التطبيق</h3></div>
+          <div class="panel-body" style="padding:0">
+            {% if employees %}
+            <table class="table" style="margin:0">
+              <thead><tr><th>الاسم</th><th>الرقم الوظيفي</th></tr></thead>
+              <tbody>
+              {% for e in employees %}
+                <tr{% if not e.active %} class="text-muted"{% endif %}><td>{{ e.name }}{% if not e.active %} (محذوف من التطبيق){% endif %}</td><td>{{ e.code }}</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <p style="padding:15px" class="text-muted">لم يصل أي موظف بعد. سيظهرون هنا تلقائياً بعد ربط التطبيق.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+try {
+  new QRCode(document.getElementById('hudoor-qr'), { text: {{ connection_code|json_encode }}, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+} catch (e) {
+  document.getElementById('hudoor-qr').innerHTML = '<p style="padding:20px">تعذّر عرض الرمز. استخدم الإدخال اليدوي.</p>';
+}
+</script>
+{{ footer }}

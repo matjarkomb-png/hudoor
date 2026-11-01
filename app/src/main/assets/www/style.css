@@ -155,3 +155,17 @@ td.num { direction: ltr; text-align: right; font-variant-numeric: tabular-nums; 
   .match-card { align-self: center; }
   .tab-panel, .enroll-body { max-width: 900px; margin: 0 auto; }
 }
+
+/* الربط مع الموقع */
+.sync-status { padding: 10px 12px; border-radius: 10px; background: #f1f5f9; font-size: 14px; margin-bottom: 8px; line-height: 1.6; }
+.sync-status.ok { background: #dcfce7; color: #166534; }
+.sync-status.warn { background: #ffedd5; color: #9a3412; }
+.sync-status.err { background: #fee2e2; color: #991b1b; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--primary); font-size: 14px; padding: 6px 0; }
+.scan-wrap { position: relative; aspect-ratio: 1 / 1; background: #000; border-radius: 12px; overflow: hidden; margin: 8px 0; }
+.scan-wrap video { width: 100%; height: 100%; object-fit: cover; }
+.kiosk-sync { font-size: 12px; margin-top: 2px; color: #94a3b8; }
+.kiosk-sync::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-left: 6px; vertical-align: middle; }
+.kiosk-sync.pending::before { background: #f59e0b; }
+.kiosk-sync.error::before { background: #ef4444; }

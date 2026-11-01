@@ -44,6 +44,7 @@
     <div>
       <div id="kiosk-company" class="company"></div>
       <div id="kiosk-date" class="muted small"></div>
+      <div id="kiosk-sync" class="kiosk-sync hidden"></div>
     </div>
     <div id="kiosk-clock" class="clock">--:--</div>
     <button id="btn-admin" class="icon-btn" aria-label="الإدارة">⚙</button>
@@ -148,6 +149,23 @@
       <button id="s-save" class="btn primary">حفظ</button>
     </div>
     <div class="card">
+      <h3>ربط الموقع (OpenCart)</h3>
+      <div id="sync-status" class="sync-status">غير مربوط</div>
+      <p class="muted small">افتح لوحة تحكم موقعك ← الحضور والانصراف ← ربط التطبيق، ثم امسح الرمز الظاهر هناك.</p>
+      <button id="sync-scan" class="btn primary block">📷 مسح رمز الربط</button>
+      <details id="sync-manual">
+        <summary>إدخال يدوي</summary>
+        <label>رابط الموقع <input id="sync-url" type="url" dir="ltr" placeholder="https://www.example.com/"></label>
+        <label>مفتاح الربط <input id="sync-key" type="text" dir="ltr" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
+        <label>اسم هذا الجهاز <input id="sync-device" type="text" placeholder="جهاز المكتب"></label>
+        <button id="sync-test" class="btn primary">اختبار وحفظ</button>
+      </details>
+      <div class="row wrap" style="margin-top:10px">
+        <button id="sync-now" class="btn ghost">إرسال الآن</button>
+        <button id="sync-off" class="btn ghost">إلغاء الربط</button>
+      </div>
+    </div>
+    <div class="card">
       <h3>تغيير رمز المدير</h3>
       <label>الرمز الجديد <input id="s-pin" type="password" inputmode="numeric"></label>
       <label>تأكيد <input id="s-pin2" type="password" inputmode="numeric"></label>
@@ -195,6 +213,16 @@
     <p id="enroll-error" class="error"></p>
   </div>
 </section>
+
+<!-- مسح رمز الربط -->
+<div id="scan-modal" class="modal hidden">
+  <div class="card narrow">
+    <h3>وجّه الكاميرا إلى رمز الربط</h3>
+    <div class="scan-wrap"><video id="scan-video" autoplay muted playsinline></video></div>
+    <p id="scan-status" class="muted small">جاري تشغيل الكاميرا…</p>
+    <button id="scan-cancel" class="btn ghost block">إلغاء</button>
+  </div>
+</div>
 
 <!-- نافذة تأكيد عامة -->
 <div id="confirm-modal" class="modal hidden">

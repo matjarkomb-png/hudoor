@@ -36,16 +36,23 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk Hudoor.apk
 
+      - name: Package OpenCart extension
+        run: cd opencart && zip -r ../hudoor.ocmod.zip upload
+
       - uses: actions/upload-artifact@v4
         with:
           name: Hudoor-apk
-          path: Hudoor.apk
+          path: |
+            Hudoor.apk
+            hudoor.ocmod.zip
 
       - name: Publish download link
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: حضور - الإصدار 1.0.${{ github.run_number }}
-          body: "حمّل الملف Hudoor.apk بالأسفل وثبّته على جهاز أندرويد."
-          files: Hudoor.apk
+          body: "Hudoor.apk: التطبيق لجهاز الأندرويد. hudoor.ocmod.zip: إضافة OpenCart 3 لاستقبال الحضور في لوحة تحكم الموقع."
+          files: |
+            Hudoor.apk
+            hudoor.ocmod.zip
           make_latest: true
